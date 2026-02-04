@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reachy-mini-skills"
+version = "0.1.0"
+description = "Modular components for building Reachy Mini applications"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Jean-Yves Vet", email = "contact@jean-yves.vet"}
+]
+keywords = ["robotics", "reachy", "mini", "skills", "AI"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "sounddevice>=0.4.6",
+    "websockets>=12.0",
+    "aiohttp>=3.9.0",
+    "pydantic>=2.0.0",
+    "opencv-python>=4.8.0",
+    "soundfile>=0.12.0",
+    "msgpack>=1.0.0",
+    "pyaudio",
+    "audioop-lts>=0.2.1; python_version>='3.13'",
+    "reachy_mini",
+    "mediapipe>=0.10.0",
+    "cerebras",
+    "cartesia",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+cartesia = [
+    "cartesia>=0.1.0",
+]
+cerebras = [
+    "cerebras-cloud-sdk>=1.0.0",
+]
+all = [
+    "reachy-mini-skills[cartesia,cerebras]",
+]
+
+[project.urls]
+Homepage = "https://github.com/jyvet/reachy-mini-skills"
+Documentation = "https://github.com/jyvet/reachy-mini-skills#readme"
+Repository = "https://github.com/jyvet/reachy-mini-skills.git"
+Issues = "https://github.com/jyvet/reachy-mini-skills/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
