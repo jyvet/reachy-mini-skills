@@ -17,6 +17,21 @@ Modular components for building Reachy Mini applications. This library provides 
 
 ## Installation
 
+### Prerequisites
+
+This library requires the PortAudio development headers on Linux to be installed on your system:
+
+```bash
+# Debian/Ubuntu
+sudo apt install portaudio19-dev
+
+# Fedora
+sudo dnf install portaudio-devel
+
+# macOS
+brew install portaudio
+```
+
 ### From git (recommended for Reachy Mini apps)
 
 Add to your `pyproject.toml` dependencies:
