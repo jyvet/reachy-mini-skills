@@ -891,6 +891,15 @@ class ConversationOrchestrator:
                     self.audio_state.input_mode,
                     self.reachy_mini.media if self.reachy_mini else None
                 )
+                input_sample_rate = (
+                    ReachyAudioManager.REACHY_SAMPLE_RATE
+                    if isinstance(self._audio_manager, ReachyAudioManager)
+                    else self.config.audio.sample_rate
+                )
+                if hasattr(self.providers.stt.config, "input_sample_rate"):
+                    self.providers.stt.config = self.providers.stt.config.update(
+                        input_sample_rate=input_sample_rate
+                    )
                 audio_queue = await self._audio_manager.start_microphone_stream()
                 
                 # Transcribe with VAD

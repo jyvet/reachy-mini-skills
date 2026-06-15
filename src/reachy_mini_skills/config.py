@@ -17,6 +17,7 @@ class STTConfig:
     cartesia_api_key: str = field(default_factory=lambda: os.environ.get("CARTESIA_API_KEY", ""))
     cartesia_sample_rate: int = 16000
     cartesia_chunk_size: int = 640
+    input_sample_rate: Optional[int] = None
     
     # Deepgram
     deepgram_sample_rate: int = 16000

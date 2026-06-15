@@ -13,6 +13,7 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy.signal import resample
 
 from .stt_base import STTProvider, STTResult, has_sentence_ending
 from .vad import EnergyVAD
@@ -26,6 +27,10 @@ __all__ = ["CartesiaSTT", "STTResult", "create"]
 
 class CartesiaSTT(STTProvider):
     """Cartesia streaming STT provider."""
+
+    # AudioManager captures system microphone audio at 24 kHz by default.
+    # ReachyAudioManager already captures at 16 kHz, matching Cartesia's STT default.
+    DEFAULT_INPUT_SAMPLE_RATE = 24000
     
     @property
     def name(self) -> str:
@@ -50,21 +55,51 @@ class CartesiaSTT(STTProvider):
         vad = EnergyVAD(self.config)
         
         loop = asyncio.get_running_loop()
+
+        def to_cartesia_pcm(audio_data: np.ndarray) -> bytes:
+            """Convert float32 microphone audio to Cartesia's configured PCM stream."""
+            audio_array = np.asarray(audio_data, dtype=np.float32)
+            input_sample_rate = self.config.input_sample_rate or self.DEFAULT_INPUT_SAMPLE_RATE
+
+            if input_sample_rate != self.config.cartesia_sample_rate and len(audio_array) > 0:
+                num_samples = int(len(audio_array) * self.config.cartesia_sample_rate / input_sample_rate)
+                audio_array = resample(audio_array, max(1, num_samples)).astype(np.float32)
+
+            return (np.clip(audio_array, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
         
         def run_cartesia_stt():
             nonlocal ttfb, transcript_text, speech_started, voice_detected
             nonlocal last_word_time, start
             
             client = Cartesia(api_key=self.config.cartesia_api_key)
+            if not hasattr(client.stt, "manual_finalize"):
+                raise RuntimeError(
+                    "Cartesia STT ink2 requires cartesia>=3.2.0. "
+                    "Upgrade the app environment so reachy-mini-skills installs the newer SDK."
+                )
             
-            ws = client.stt.websocket(
-                model="ink-whisper",
-                language="en",
+            ws_context = client.stt.manual_finalize.websocket(
+                model="ink-2",
                 encoding="pcm_s16le",
                 sample_rate=self.config.cartesia_sample_rate,
-                min_volume=0.1,
-                max_silence_duration_secs=self.config.silence_timeout,
             )
+            ws = ws_context.enter() if hasattr(ws_context, "enter") else ws_context.__enter__()
+
+            def send_audio_bytes(audio_bytes: bytes) -> None:
+                if hasattr(ws, "send_raw"):
+                    ws.send_raw(audio_bytes)
+                else:
+                    ws.send(audio_bytes)
+
+            def receive_events():
+                if hasattr(ws, "receive"):
+                    return ws.receive()
+                return ws
+
+            def event_value(event, key, default=None):
+                if isinstance(event, dict):
+                    return event.get(key, default)
+                return getattr(event, key, default)
             
             try:
                 # Drain queue
@@ -96,7 +131,7 @@ class CartesiaSTT(STTProvider):
                             print("\r   (no voice detected - timeout)    ")
                             stop_receiving.set()
                             try:
-                                ws.send("done")
+                                ws.send("close")
                                 ws.close()
                             except:
                                 pass
@@ -109,12 +144,7 @@ class CartesiaSTT(STTProvider):
                     for buffered_audio in vad.get_buffered_audio():
                         if stop_receiving.is_set():
                             break
-                        pcm_int16 = (buffered_audio * 32767).astype(np.int16)
-                        if 24000 != self.config.cartesia_sample_rate:
-                            ratio = 24000 / self.config.cartesia_sample_rate
-                            indices = np.arange(0, len(pcm_int16), ratio).astype(int)
-                            pcm_int16 = pcm_int16[indices]
-                        ws.send(pcm_int16.tobytes())
+                        send_audio_bytes(to_cartesia_pcm(buffered_audio))
                 
                 # Phase 3: Continue streaming
                 def send_audio():
@@ -127,20 +157,14 @@ class CartesiaSTT(STTProvider):
                         
                         vad.update_activity(audio_data)
                         
-                        pcm_int16 = (audio_data * 32767).astype(np.int16)
-                        if 24000 != self.config.cartesia_sample_rate:
-                            ratio = 24000 / self.config.cartesia_sample_rate
-                            indices = np.arange(0, len(pcm_int16), ratio).astype(int)
-                            pcm_int16 = pcm_int16[indices]
-                        
                         try:
-                            ws.send(pcm_int16.tobytes())
+                            send_audio_bytes(to_cartesia_pcm(audio_data))
                         except:
                             break
                     
                     try:
                         ws.send("finalize")
-                        ws.send("done")
+                        ws.send("close")
                     except:
                         pass
                 
@@ -179,26 +203,33 @@ class CartesiaSTT(STTProvider):
                 send_thread.start()
                 monitor_thread.start()
                 
-                for result in ws.receive():
+                for result in receive_events():
                     if stop_receiving.is_set():
                         break
                     
-                    if result['type'] == 'transcript':
+                    result_type = event_value(result, "type")
+                    if result_type == 'transcript':
                         if ttfb is None:
                             ttfb = time.perf_counter() - start
                         
-                        text = result.get('text', '')
+                        text = event_value(result, "text", "")
                         if text:
                             print(text, end=" ", flush=True)
-                            transcript_text = text
                             speech_started = True
                             last_word_time = time.perf_counter()
                         
-                        if result.get('is_final', False):
+                        if event_value(result, "is_final", False):
+                            transcript_text += text
                             stop_receiving.set()
                             break
                     
-                    elif result['type'] == 'done':
+                    elif result_type == 'done':
+                        stop_receiving.set()
+                        break
+
+                    elif result_type == 'error':
+                        message = event_value(result, "message", "unknown error")
+                        print(f"\n   (Cartesia STT error: {message})")
                         stop_receiving.set()
                         break
                 
@@ -210,7 +241,10 @@ class CartesiaSTT(STTProvider):
                 print(f"\n   (Cartesia STT error: {e})")
             finally:
                 try:
-                    ws.close()
+                    if hasattr(ws_context, "__exit__"):
+                        ws_context.__exit__(None, None, None)
+                    else:
+                        ws.close()
                 except:
                     pass
         

@@ -41,7 +41,7 @@ dependencies = [
     "reachy_mini",
     "mediapipe>=0.10.0",
     "cerebras",
-    "cartesia",
+    "cartesia>=3.2.0",
 ]
 
 [project.optional-dependencies]
@@ -54,7 +54,7 @@ dev = [
     "mypy>=1.0.0",
 ]
 cartesia = [
-    "cartesia>=0.1.0",
+    "cartesia>=3.2.0",
 ]
 cerebras = [
     "cerebras-cloud-sdk>=1.0.0",
